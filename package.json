@@ -16,5 +16,9 @@
   "bugs": {
     "url": "https://github.com/Zubair-624/docker-nodejs-aws-cicd/issues"
   },
-  "homepage": "https://github.com/Zubair-624/docker-nodejs-aws-cicd#readme"
+  "homepage": "https://github.com/Zubair-624/docker-nodejs-aws-cicd#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "morgan": "^1.10.1"
+  }
 }
