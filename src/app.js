@@ -11,7 +11,7 @@ const app = express();
 //----------Global Middleware ----------
 app.use(logger);                              
 app.use(express.json());                      
-app.use(express.urlencoded({ extended: true })); a
+app.use(express.urlencoded({ extended: true }));
 
 //----------Routes----------
 app.use("/", router);
