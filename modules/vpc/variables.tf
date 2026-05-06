@@ -1,4 +1,12 @@
-#----------AWS CIDR Block (10.0.0.0/16)----------
+#----------Project Name----------
+variable "project_name" {
+
+    description = "Project name used for naming all resources"
+    type = string
+  
+}
+
+#AWS CIDR Block (10.0.0.0/16) and cidr_block will be again used in the terraform/variables.tf;main.tf 
 variable "cidr_block" {
 
     description = "CIDR Block for the AWS VPC"
@@ -16,7 +24,7 @@ variable "az" {
   
 }
 
-#----------PUblic Subent CIDR (Public Subnet 1)
+#PUblic Subent CIDR (Public Subnet 1) and public_subnet_one_cidr will be again used in the terraform/variables.tf;main.tf
 variable "public_subnet_one_cidr" {
     
     description = "CIDR block for the public subnet 1"
@@ -24,11 +32,5 @@ variable "public_subnet_one_cidr" {
     default = "10.0.1.0/24"
   
 }
-#----------Project Name----------
-variable "project_name" {
 
-    description = "Project name used for naming all resources"
-    type = string
-  
-}
 

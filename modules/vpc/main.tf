@@ -57,7 +57,7 @@ resource "aws_route_table" "public" {
 
 }
 
-#----------Route Table Association (Public Route Table + Public Subnet)
+#----------Route Table Association (Public Route Table + Public Subnet)----------
 resource "aws_route_table_association" "public" {
 
     route_table_id = aws_route_table.public.id
