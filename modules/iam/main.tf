@@ -4,6 +4,8 @@
 #IAM Instance Profile Point to the -> IAM Role
 resource "aws_iam_instance_profile" "ec2_profile" {
 
+    name = "${var.project_name}-ec2-profile"
+
     tags = {
         Name = "${var.project_name}-ec2"
     }
