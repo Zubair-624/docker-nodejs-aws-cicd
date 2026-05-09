@@ -1,0 +1,111 @@
+# ============================================================
+# docker.yml — GitHub Actions CI/CD Pipeline
+# Trigger: every push to master branch
+# Jobs: build image → push to Docker Hub → deploy to AWS EC2
+# ============================================================
+
+name: CI/CD Pipeline - Build, Push, and Deploy
+
+# ────────────────────────────────────────────────────────────
+# The Triggers
+# WHEN TO RUN
+# ────────────────────────────────────────────────────────────
+on:
+  push:
+    branches:
+      - master
+
+# ────────────────────────────────────────────────────────────
+# The Identity
+# GLOBAL ENVIRONMENT VARIABLES
+# ────────────────────────────────────────────────────────────
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/docker-nodejs-aws-cicd
+
+# ────────────────────────────────────────────────────────────
+# JOBS
+# ────────────────────────────────────────────────────────────
+jobs:
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 1 — BUILD AND PUSH
+  # Builds Docker image from code and pushes to Docker Hub
+  # ──────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # Download the code onto GitHub Actions machine
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Install Buildx tool for faster and smarter image builds
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Login to Docker Hub using GitHub Secrets
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Build the image from Dockerfile and push to Docker Hub
+      # latest = always the most recent version
+      # github.sha = unique tag per commit for version history
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 2 — DEPLOY TO AWS EC2
+  # SSHs into EC2 and runs deploy.sh to start new container
+  # Only runs AFTER Job 1 succeeds
+  # ──────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    steps:
+
+      # Download code so we have access to scripts/deploy.sh
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Copy deploy.sh from repo to EC2 home directory
+      - name: Copy deploy.sh to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.AWS_EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.AWS_EC2_SSH_KEY }}
+          source: "scripts/deploy.sh"
+          target: "~/"
+          strip_components: 1
+
+      # SSH into EC2 and run deploy.sh
+      - name: SSH into EC2 and Deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.AWS_EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.AWS_EC2_SSH_KEY }}
+          script: |
+            # Make deploy.sh executable
+            chmod +x ~/deploy.sh
+
+            # Inject GitHub secrets as environment variables
+            export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+            export DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
+            export DOCKER_IMAGE="${{ env.IMAGE_NAME }}:latest"
+
+            # Execute the deploy script
+            bash ~/deploy.sh
