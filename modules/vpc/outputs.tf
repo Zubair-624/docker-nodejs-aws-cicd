@@ -1,4 +1,5 @@
-#This main_vpc_id will be used in the -> Security Group (modules/security_group/main.tf)
+# main_vpc_id → used by:
+# modules/security_group/main.tf (vpc_id)
 output "main_vpc_id" {
 
     description = "ID of the VPC"
@@ -6,10 +7,21 @@ output "main_vpc_id" {
   
 }
 
-#This public_subnet_ids will be used in the -> EC2 Instance (modules/ec2/main.tf)
+# public_subnet_ids → used by:
+# modules/bastion/main.tf (bastion lives here)
+# modules/vpc/main.tf (NAT Gateway lives here)
 output "public_subnet_ids" {
 
     description = "ID of the Public Subnet(Public Subnet 1)"
-    value = aws_subnet.main.id
+    value = aws_subnet.public.id
+  
+}
+
+# private_subnet_ids → used by:
+# modules/ec2/main.tf (app server lives here)
+output "private_subnet_ids" {
+
+    description = "ID of the Private Subnet (Private Subnet 1)"
+    value = aws_subnet.private.id
   
 }
