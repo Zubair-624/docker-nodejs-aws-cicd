@@ -12,12 +12,14 @@ variable "main_vpc_id" {
   
 }
 
-#----------IP Range----------
-variable "ssh_cidr" {
+# Applied to BASTION only - not app server
+# 0.0.0.0/0 = open to everyone
+# Security comes from .pem key - fixes IP change problem forever
+variable "allowed_ssh_cidr" {
 
-    description = "My IP range allowed for SSH access"
+    description = "IP range allowed for SSH to bastion"
     type = string
-    default = "180.94.28.0/24"
+    default = "0.0.0.0/0"
   
 }
 
