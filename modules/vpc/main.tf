@@ -1,34 +1,49 @@
 #----------VPC----------
-resource "aws_vpc" "main" {
+resource "aws_vpc" "vpc" {
 
     tags = {
         Name = "${var.project_name}-vpc"
     }
 
-    cidr_block = var.cidr_block
+    cidr_block = var.aws_vpc_cidr_block
 
+    #-----Allows domain name resolution inside the VPC (e.g. rds.amazonaws.com --> private IP)-----
+    # Enables DNS resolution inside the VPC.
+    # Without this, instances cannot resolve AWS service domain names.
+    # Example:
+    #   your EC2 tries to connect to RDS using:
+    #   mydb.xxxxxx.us-east-1.rds.amazonaws.com
+    #   --> if false, this domain will NOT resolve (connection fails)
+    #   --> if true,  this domain resolves to a private IP (works!)
     enable_dns_support = true
+
+    # Gives each EC2 instance a public DNS hostname automatically.
+    # Without this, EC2 instances get an IP but NO hostname.
+    # Example:
+    #   Your EC2 public IP is 52.86.29.38
+    #   --> if false, you only get:  52.86.29.38  (IP only)
+    #   --> if true,  you also get:  ec2-52-86-29-38.compute-1.amazonaws.com
     enable_dns_hostnames = true 
   
 }
 
 #----------IGW----------
 # Internet Gateway = door between VPC and public internet
-resource "aws_internet_gateway" "main" {
+resource "aws_internet_gateway" "igw" {
 
     tags = {
         Name = "${var.project_name}-igw"
     }
 
-    vpc_id = aws_vpc.main.id
+    vpc_id = aws_vpc.vpc.id
   
 }
 
-#----------Public Subent----------
+#----------Public Subnet----------
 # Bastion host + NAT Gateway live here
-resource "aws_subnet" "public" {
+resource "aws_subnet" "public_subnet_one" {
 
-    vpc_id = aws_vpc.main.id
+    vpc_id = aws_vpc.vpc.id
 
     tags = {
         Name = "${var.project_name}-public-subnet-1"
@@ -44,11 +59,11 @@ resource "aws_subnet" "public" {
 
 #----------Private Subnet----------
 # App server lives here - no direct internet access
-# More secure — not reachable from internet directly
+# More secure - not reachable from internet directly
 
-resource "aws_subnet" "private" {
+resource "aws_subnet" "private_subnet_one" {
 
-    vpc_id = aws_vpc.main.id
+    vpc_id = aws_vpc.vpc.id
 
     tags = {
         Name = "${var.project_name}-private-subnet-1"
@@ -91,7 +106,7 @@ resource "aws_nat_gateway" "nat" {
         Name = "${var.project_name}-nat-gateway"
     }
 
-    subnet_id = aws_subnet.public.id
+    subnet_id = aws_subnet.public_subnet_one.id
 
     connectivity_type = "public" 
 
@@ -99,7 +114,7 @@ resource "aws_nat_gateway" "nat" {
 
     # depends_on = IGW must exist before NAT Gateway can route traffic to internet
     # IGW has no direct reference in this resource so must declare manually
-    depends_on = [ aws_internet_gateway.main ]
+    depends_on = [ aws_internet_gateway.igw ]
   
 }
 #──────────────────────────────────────────────────────────────────────────────────
@@ -114,11 +129,11 @@ resource "aws_route_table" "public" {
         Name = "${var.project_name}-public-rt"
     }
 
-    vpc_id = aws_vpc.main.id
+    vpc_id = aws_vpc.vpc.id
 
     route {
         cidr_block = "0.0.0.0/0"
-        gateway_id = aws_internet_gateway.main.id
+        gateway_id = aws_internet_gateway.igw.id
     }
 
 }
@@ -129,7 +144,7 @@ resource "aws_route_table_association" "public" {
 
     route_table_id = aws_route_table.public.id
 
-    subnet_id = aws_subnet.public.id
+    subnet_id = aws_subnet.public_subnet_one.id 
   
 }
 #──────────────────────────────────────────────────────────────────────────────────
@@ -146,7 +161,7 @@ resource "aws_route_table" "private" {
         Name = "${var.project_name}-private-rt"
     }
 
-    vpc_id = aws_vpc.main.id
+    vpc_id = aws_vpc.vpc.id
 
     route {
         cidr_block = "0.0.0.0/0"
@@ -162,7 +177,7 @@ resource "aws_route_table_association" "private" {
 
     route_table_id = aws_route_table.private.id
 
-    subnet_id = aws_subnet.private.id 
+    subnet_id = aws_subnet.private_subnet_one.id 
 
 }
 #──────────────────────────────────────────────────────────────────────────────────
