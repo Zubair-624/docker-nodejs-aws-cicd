@@ -2,6 +2,8 @@
 # docker.yml — GitHub Actions CI/CD Pipeline
 # Trigger: every push to master branch
 # Jobs: build image → push to Docker Hub → deploy to AWS EC2
+# Architecture: Bastion Host — GitHub Actions SSHs via bastion
+#               to reach app server in private subnet
 # ============================================================
 
 name: CI/CD Pipeline - Build, Push, and Deploy
@@ -18,8 +20,11 @@ on:
 # ────────────────────────────────────────────────────────────
 # The Identity
 # GLOBAL ENVIRONMENT VARIABLES
+# Available to all jobs and steps
 # ────────────────────────────────────────────────────────────
 env:
+  # Full image name on Docker Hub
+  # example: zubair624/docker-nodejs-aws-cicd
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/docker-nodejs-aws-cicd
 
 # ────────────────────────────────────────────────────────────
@@ -30,6 +35,7 @@ jobs:
   # ──────────────────────────────────────────────────────────
   # JOB 1 — BUILD AND PUSH
   # Builds Docker image from code and pushes to Docker Hub
+  # Runs on GitHub's Ubuntu machine (free, temporary)
   # ──────────────────────────────────────────────────────────
   build-and-push:
     name: Build and Push Docker Image
@@ -38,14 +44,18 @@ jobs:
     steps:
 
       # Download the code onto GitHub Actions machine
+      # Without this step — GitHub machine has no code to build
       - name: Checkout Code
         uses: actions/checkout@v4
 
       # Install Buildx tool for faster and smarter image builds
+      # Buildx = advanced Docker build tool built into GitHub Actions
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       # Login to Docker Hub using GitHub Secrets
+      # secrets.DOCKERHUB_USERNAME = zubair624
+      # secrets.DOCKERHUB_TOKEN = your Docker Hub access token
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -53,8 +63,11 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Build the image from Dockerfile and push to Docker Hub
-      # latest = always the most recent version
+      # context: . = use current directory (where Dockerfile lives)
+      # push: true = automatically push after build
+      # latest = always the most recent version tag
       # github.sha = unique tag per commit for version history
+      #              example: zubair624/docker-nodejs-aws-cicd:a1b2c3d
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
@@ -66,46 +79,92 @@ jobs:
 
   # ──────────────────────────────────────────────────────────
   # JOB 2 — DEPLOY TO AWS EC2
-  # SSHs into EC2 and runs deploy.sh to start new container
-  # Only runs AFTER Job 1 succeeds
+  # Deploys via Bastion Host architecture:
+  #   GitHub Actions → Bastion (public IP) → App Server (private IP)
+  #
+  # needs: build-and-push = only runs AFTER Job 1 succeeds
+  # If Job 1 fails → Job 2 never runs → broken code never deployed
   # ──────────────────────────────────────────────────────────
   deploy:
-    name: Deploy to AWS EC2
+    name: Deploy to AWS EC2 via Bastion
     runs-on: ubuntu-latest
+
+    # Wait for Job 1 to finish successfully before starting
     needs: build-and-push
 
     steps:
 
       # Download code so we have access to scripts/deploy.sh
+      # deploy.sh needs to be copied to app server
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Copy deploy.sh from repo to EC2 home directory
-      - name: Copy deploy.sh to EC2
+      # Copy deploy.sh to app server via bastion host
+      # ─────────────────────────────────────────────
+      # SCP = Secure Copy over SSH
+      # Direct copy to app server is NOT possible (private subnet)
+      # So we use bastion as a proxy/jump server
+      #
+      # host          = APP server private IP (final destination)
+      # proxy_host    = BASTION public IP (the jump server)
+      # proxy_username = ubuntu (bastion username)
+      # proxy_key     = same .pem key (used for both bastion + app server)
+      # source        = file to copy from GitHub repo
+      # target        = destination on app server
+      # strip_components: 1 = copy deploy.sh directly to ~/
+      #                       not ~/scripts/deploy.sh
+      - name: Copy deploy.sh to App Server via Bastion
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.AWS_EC2_HOST }}
+          host: ${{ secrets.APP_PRIVATE_IP }}
           username: ubuntu
           key: ${{ secrets.AWS_EC2_SSH_KEY }}
+          proxy_host: ${{ secrets.BASTION_PUBLIC_IP }}
+          proxy_username: ubuntu
+          proxy_key: ${{ secrets.AWS_EC2_SSH_KEY }}
           source: "scripts/deploy.sh"
           target: "~/"
           strip_components: 1
 
-      # SSH into EC2 and run deploy.sh
-      - name: SSH into EC2 and Deploy
+      # SSH into app server via bastion and run deploy.sh
+      # ──────────────────────────────────────────────────
+      # Connection flow:
+      #   GitHub Actions → Bastion (proxy_host) → App Server (host)
+      #
+      # host          = APP server private IP (final destination)
+      # proxy_host    = BASTION public IP (jump server)
+      # proxy_username = ubuntu (bastion login username)
+      # proxy_key     = .pem key for bastion authentication
+      # key           = .pem key for app server authentication
+      #
+      # Inside script:
+      #   chmod +x     = make deploy.sh executable
+      #   export       = pass GitHub secrets as environment variables
+      #                  deploy.sh reads these variables to login to Docker Hub
+      #   bash ~/deploy.sh = execute the deploy script on app server
+      - name: SSH via Bastion and Deploy
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.AWS_EC2_HOST }}
+          host: ${{ secrets.APP_PRIVATE_IP }}
           username: ubuntu
           key: ${{ secrets.AWS_EC2_SSH_KEY }}
+          proxy_host: ${{ secrets.BASTION_PUBLIC_IP }}
+          proxy_username: ubuntu
+          proxy_key: ${{ secrets.AWS_EC2_SSH_KEY }}
           script: |
             # Make deploy.sh executable
+            # Without this → permission denied error
             chmod +x ~/deploy.sh
 
             # Inject GitHub secrets as environment variables
+            # deploy.sh reads these to login to Docker Hub and pull image
+            # DOCKERHUB_USERNAME = zubair624
+            # DOCKERHUB_TOKEN    = your Docker Hub access token
+            # DOCKER_IMAGE       = zubair624/docker-nodejs-aws-cicd:latest
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
             export DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
             export DOCKER_IMAGE="${{ env.IMAGE_NAME }}:latest"
 
-            # Execute the deploy script
+            # Execute the deploy script on app server
+            # deploy.sh will: pull image → stop old container → start new container
             bash ~/deploy.sh

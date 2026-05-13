@@ -1,8 +1,10 @@
 #!/bin/bash
 # ============================================================
-# deploy.sh — Runs ON AWS EC2 via GitHub Actions SSH
+# deploy.sh — Runs ON AWS EC2 App Server via GitHub Actions SSH
 # Purpose  — Pull latest Docker image and restart container
 # Called by — .github/workflows/docker.yml (Job 2)
+# Architecture — App server is in PRIVATE subnet
+#                GitHub Actions reaches it via Bastion Host
 # ============================================================
 
 # set -e = if ANY command fails, stop the script immediately
@@ -53,6 +55,7 @@ echo "${DOCKERHUB_TOKEN}" | docker login \
 # STEP 2 — PULL LATEST IMAGE FROM DOCKER HUB
 # Downloads the newest Docker image that GitHub Actions just pushed
 # This is the image built from your latest code
+# App server reaches Docker Hub via NAT Gateway (private subnet)
 # ────────────────────────────────────────────────────────────
 echo "Pulling latest image: ${DOCKER_IMAGE}..."
 docker pull "${DOCKER_IMAGE}"
@@ -106,9 +109,12 @@ docker image prune -f
 
 # ────────────────────────────────────────────────────────────
 # STEP 7 — CONFIRM SUCCESS
-# curl fetches the EC2 public IP from AWS metadata service
-# 169.254.169.254 = special AWS address that only works from inside EC2
-# /latest/meta-data/public-ipv4 = returns the public IP of this EC2
+# App server is in PRIVATE subnet — no public IP
+# So we show the PRIVATE IP from AWS metadata service
+# 169.254.169.254 = special AWS address only accessible from inside EC2
+# /latest/meta-data/local-ipv4 = returns PRIVATE IP of this EC2
+# To access the app from browser use the app server port 3000
 # ────────────────────────────────────────────────────────────
 echo "Deployment successful!"
-echo "App is running at http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):${HOST_PORT}"
+echo "App is running at http://$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4):${HOST_PORT}"
+echo "Note: App server is in private subnet — access via bastion or direct port 3000"
