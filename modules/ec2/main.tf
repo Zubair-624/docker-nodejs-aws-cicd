@@ -1,56 +1,62 @@
 # ----------Latest Ubuntu 24.04 AMI----------
+# data block = reads existing AWS data, does NOT create anything
+# most_recent = true → always gets latest Ubuntu 24.04 patch
+# owners = Canonical's official AWS account ID — never hardcode AMI ID
 data "aws_ami" "ubuntu_24_04" {
-
     most_recent = true
-    owners = ["099720109477"]
+    owners      = ["099720109477"]
 
     filter {
-      name = "name"
-      values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+        name   = "name"
+        values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
     }
 
     filter {
-      name = "virtualization-type"
-      values = ["hvm"]
+        name   = "virtualization-type"
+        values = ["hvm"]
     }
-  
 }
 
-#----------EC2 Instance----------
+#----------EC2 Instance (App Server)----------
 resource "aws_instance" "main" {
-
     tags = {
-        Name = "${var.project_name}-ec2"
+        Name = "${var.project_name}-app-server"
     }
 
-    #AMI(OS Image)
+    # AMI (OS Image) — Ubuntu 24.04
     ami = data.aws_ami.ubuntu_24_04.id
 
-    #Instance type
+    # Instance type — t2.micro = free tier
     instance_type = var.instance_type
 
-    #Key Pair/Name(login)
+    # Key Pair — reusable key from devops-zubair-key repo
     key_name = var.key_name
 
-    #Network Settings(1st VPC, 2nd Subnet, AZ(Subnet Select auto connect to the AZ))
-    subnet_id = var.public_subnet_ids
+    # Private subnet — app server hidden from internet
+    # No direct internet access — only via bastion SSH
+    # Outbound internet via NAT Gateway
+    subnet_id = var.private_subnet_id
 
-    #Auto-assign public IP(Enable)
-    associate_public_ip_address = true 
+    # NO public IP — app server is private
+    # Only bastion can reach it via SSH
+    associate_public_ip_address = false
 
-    #Firewall (security groups)
+    # App server security group
+    # Port 22   → only from bastion SG
+    # Port 80   → open to everyone
+    # Port 3000 → open to everyone
     vpc_security_group_ids = [var.security_group_ids]
 
-    #Configure storage 
+    # Configure storage
+    # gp3 = latest SSD type, faster and cheaper than gp2
+    # delete_on_termination = disk deleted when EC2 terminated
     root_block_device {
-      volume_size = var.volume_size
-      volume_type = "gp3"
-      delete_on_termination = true 
+        volume_size           = var.volume_size
+        volume_type           = "gp3"
+        delete_on_termination = true
     }
 
-    #IAM instance profile
+    # IAM instance profile — allows EC2 to read from S3
+    # comes from modules/iam/outputs.tf
     iam_instance_profile = var.iam_instance_profile
-    
-
-  
 }
