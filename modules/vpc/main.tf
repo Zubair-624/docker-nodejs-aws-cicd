@@ -121,12 +121,25 @@ resource "aws_nat_gateway" "nat" {
 
 #──────────────────────────────────────────────────────────────────────────────────
 #----------Public Route Table----------
+# PUBLIC Route Table
+#   → Used by PUBLIC subnets
+#  → Rule: "all internet traffic → go through Internet Gateway"
+#   → ONE route table shared by all public subnets
 # Route Table = A set of rules that tells network traffic WHERE to go
 # Route Table  =  Road signs in a city
 # Routes       =  Individual signs ("To Airport → Turn Left")
 
 # Without road signs → cars get lost, traffic goes nowhere
 # With road signs    → traffic knows exactly where to go
+
+# All public subnets use the SAME Internet Gateway
+# → Only ONE IGW exists per VPC
+# → So ONE route table is enough for all public subnets
+
+#    public-subnet-1 ──┐
+#    public-subnet-2 ──┼──→ same route table → Internet Gateway
+#    public-subnet-3 ──┘
+
 # Routes all internet traffic through IGW
 # Used by public subnet (bastion + NAT Gateway)
 resource "aws_route_table" "public" {
@@ -157,6 +170,19 @@ resource "aws_route_table_association" "public" {
 
 #──────────────────────────────────────────────────────────────────────────────────
 #----------Private Route Table----------
+# PRIVATE Route Tables
+#   → Used by PRIVATE subnets
+#   → Rule: "all internet traffic → go through NAT Gateway"
+#   → ONE route table PER AZ (because each AZ has its own NAT Gateway)
+
+# Each private subnet uses a DIFFERENT NAT Gateway
+# → One NAT Gateway per AZ
+# → So each AZ needs its OWN route table
+
+#    private-subnet-1 ──→ route table 1 → NAT Gateway 1 (us-east-1a)
+#    private-subnet-2 ──→ route table 2 → NAT Gateway 2 (us-east-1b)
+#    private-subnet-3 ──→ route table 3 → NAT Gateway 3 (us-east-1c)
+
 # Routes all internet traffic through NAT Gateway
 # Used by private subnet (app server)
 # Outbound only — nobody from internet can reach private subnet
