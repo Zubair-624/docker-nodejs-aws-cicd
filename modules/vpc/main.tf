@@ -121,6 +121,12 @@ resource "aws_nat_gateway" "nat" {
 
 #──────────────────────────────────────────────────────────────────────────────────
 #----------Public Route Table----------
+# Route Table = A set of rules that tells network traffic WHERE to go
+Route Table  =  Road signs in a city
+Routes       =  Individual signs ("To Airport → Turn Left")
+
+Without road signs → cars get lost, traffic goes nowhere
+With road signs    → traffic knows exactly where to go
 # Routes all internet traffic through IGW
 # Used by public subnet (bastion + NAT Gateway)
 resource "aws_route_table" "public" {
