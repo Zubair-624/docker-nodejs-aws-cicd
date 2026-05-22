@@ -1,2 +1,9 @@
 node_modules/
 NOTES.txt
+the_complete_project_flow_phase.txt
+
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
