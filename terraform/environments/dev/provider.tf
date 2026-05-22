@@ -8,8 +8,8 @@ terraform {
 }
 
 provider "aws" {
-    region = "us-east-1"
-    profile = "zubair-devops"
+  
+    region = var.aws_region
 
     default_tags {
     tags = {

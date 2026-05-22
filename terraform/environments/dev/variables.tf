@@ -5,6 +5,16 @@ variable "project_name" {
     default     = "docker-nodejs-aws-cicd"
 }
 
+#----------Project Region----------
+variable "aws_region" {
+
+    description = "Region of this project"
+    type = string
+    default = "us-east-1"
+  
+}
+
+
 #----------VPC----------
 
 # VPC CIDR
