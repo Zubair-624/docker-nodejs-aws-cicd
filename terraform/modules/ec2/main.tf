@@ -58,5 +58,9 @@ resource "aws_instance" "main" {
 
     # IAM instance profile — allows EC2 to read from S3
     # comes from modules/iam/outputs.tf
+    # This is the Terraform equivalent of Actions → Security → Modify IAM role you did in the console.144804
+    # ---Console: Actions → Security → Modify IAM role → select devops-lab-ssm-role, This one line = that entire console step---
     iam_instance_profile = var.iam_instance_profile
+
+    
 }
