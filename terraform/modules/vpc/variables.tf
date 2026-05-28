@@ -8,7 +8,7 @@ variable "project_name" {
 
 #----------VPC CIDR----------
 # 10.0.0.0/16 = 65,536 IP addresses inside this VPC
-#AWS CIDR Block (10.0.0.0/16) and cidr_block will be again used in the terraform/variables.tf;main.tf 
+# Referenced in: terraform/environments/dev/main.tf 
 variable "aws_vpc_cidr_block" {
 
     description = "CIDR Block for the AWS VPC"
@@ -18,20 +18,39 @@ variable "aws_vpc_cidr_block" {
 }
 
 #----------Availability Zone----------
-#Availability Zone For Public Subnet (Public Subnet 1)
+# AZ for both public subnet and private subnet
+# No default - environments/dev/main.tf must pass this explicitly
 variable "az" {
 
     description = "AZ for the public subnet"
     type = string
-    default = "us-east-1a"
   
 }
 
-#----------Public Subnet CIDR----------
-# Bastion host + NAT Gateway live here
+#----------AWS Region----------
+variable "aws_region" {
+
+    description = "AWS region - used for SSM vpc endpoint service names"
+    type = string
+    default = "us-east-1"
+  
+}
+
+#----------SSM Endpoint Security Group ID - ssm_endpoint_sg_id----------
+# Security group attached to SSM VPC interface endpoints
+# Must allow port 443 inbound from VPC CIDR (10.0.0.0/16)
+variable "ssm_endpoint_sg_id" {
+
+    description = "security group id for SSM vpc interface endpoints(allows port 443 inbound from vpc CIDR)"
+    type = string
+  
+}
+
+#----------Public Subnet CIDR - public_subnet_one_cidr----------
+# NAT Gateway lives here - access via SSM, no bastion
 # 10.0.1.0/24 = 256 IP addresses
 # Must be inside VPC CIDR (10.0.0.0/16)
-#PUblic Subnet CIDR (Public Subnet 1) and public_subnet_one_cidr will be again used in the terraform/variables.tf;main.tf
+# Referenced in: terraform/environments/dev/main.tf
 variable "public_subnet_one_cidr" {
     
     description = "CIDR block for the public subnet 1"
