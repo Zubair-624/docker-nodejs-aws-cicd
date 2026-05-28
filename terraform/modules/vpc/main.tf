@@ -23,11 +23,13 @@ resource "aws_vpc" "vpc" {
     #   Your EC2 public IP is 52.86.29.38
     #   --> if false, you only get:  52.86.29.38  (IP only)
     #   --> if true,  you also get:  ec2-52-86-29-38.compute-1.amazonaws.com
+    #-----Also, required for SSM VPC endpoint private DNS resolution-----
     enable_dns_hostnames = true 
   
 }
 
 #----------IGW----------
+# Connects VPC to public internet
 # Internet Gateway = door between VPC and public internet
 resource "aws_internet_gateway" "igw" {
 
@@ -40,7 +42,7 @@ resource "aws_internet_gateway" "igw" {
 }
 
 #----------Public Subnet----------
-# Bastion host + NAT Gateway live here
+# NAT Gateway lives here - no bastion, access via SSM only
 resource "aws_subnet" "public_subnet_one" {
 
     vpc_id = aws_vpc.vpc.id
@@ -58,9 +60,8 @@ resource "aws_subnet" "public_subnet_one" {
 }
 
 #----------Private Subnet----------
-# App server lives here - no direct internet access
+# App server lives here - no direct internet access, outbound via NAT only
 # More secure - not reachable from internet directly
-
 resource "aws_subnet" "private_subnet_one" {
 
     vpc_id = aws_vpc.vpc.id
@@ -78,7 +79,6 @@ resource "aws_subnet" "private_subnet_one" {
   
 }
 
-#──────────────────────────────────────────────────────────────────────────────────
 #----------Elastic IP----------
 # Create Elastic IP first (NAT Gateway needs it)
 # Elastic IP for NAT Gateway
@@ -100,6 +100,7 @@ resource "aws_eip" "eip_nat" {
 # Allows private subnet resources to reach internet (outbound only)
 # App server uses this to pull Docker images from Docker Hub
 # depends_on = IGW must exist before NAT Gateway
+#-----EIP → NAT Gateway → IGW → internet-----
 resource "aws_nat_gateway" "nat" {
 
     tags = {
@@ -114,10 +115,10 @@ resource "aws_nat_gateway" "nat" {
 
     # depends_on = IGW must exist before NAT Gateway can route traffic to internet
     # IGW has no direct reference in this resource so must declare manually
+    #-----IGW must exist before NAT can route-----
     depends_on = [ aws_internet_gateway.igw ]
   
 }
-#──────────────────────────────────────────────────────────────────────────────────
 
 #──────────────────────────────────────────────────────────────────────────────────
 #----------Public Route Table----------
@@ -166,9 +167,7 @@ resource "aws_route_table_association" "public" {
     subnet_id = aws_subnet.public_subnet_one.id 
   
 }
-#──────────────────────────────────────────────────────────────────────────────────
 
-#──────────────────────────────────────────────────────────────────────────────────
 #----------Private Route Table----------
 # PRIVATE Route Tables
 #   → Used by PRIVATE subnets
@@ -212,4 +211,5 @@ resource "aws_route_table_association" "private" {
     subnet_id = aws_subnet.private_subnet_one.id 
 
 }
-#──────────────────────────────────────────────────────────────────────────────────
+
+
