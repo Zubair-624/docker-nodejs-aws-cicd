@@ -1,4 +1,5 @@
 #----------VPC----------
+# enable_dns_hostnames required for SSM VPC endpoint private DNS resolution
 resource "aws_vpc" "vpc" {
 
     tags = {
@@ -51,7 +52,7 @@ resource "aws_subnet" "public_subnet_one" {
         Name = "${var.project_name}-public-subnet-1"
     }
 
-    availability_zone = var.az
+    availability_zone = var.azs[count.index]
 
     cidr_block = var.public_subnet_one_cidr
     
@@ -60,7 +61,7 @@ resource "aws_subnet" "public_subnet_one" {
 }
 
 #----------Private Subnet----------
-# App server lives here - no direct internet access, outbound via NAT only
+# App server lives here - outbound via NAT only, not reachable from internet
 # More secure - not reachable from internet directly
 resource "aws_subnet" "private_subnet_one" {
 
@@ -70,7 +71,7 @@ resource "aws_subnet" "private_subnet_one" {
         Name = "${var.project_name}-private-subnet-1"
     }
 
-    availability_zone = var.az
+    availability_zone = var.azs[count.index]
 
     cidr_block = var.private_subnet_one_cidr
 
@@ -80,10 +81,10 @@ resource "aws_subnet" "private_subnet_one" {
 }
 
 #----------Elastic IP----------
-# Create Elastic IP first (NAT Gateway needs it)
+# Fixed public IP for NAT Gateway
+# Create Elastic IP first(NAT Gateway needs it)
 # Elastic IP for NAT Gateway
 # NAT Gateway needs a fixed public IP to work
-
 resource "aws_eip" "eip_nat" {
 
     # Means: "This Elastic IP is for VPC use"
@@ -96,11 +97,13 @@ resource "aws_eip" "eip_nat" {
 }
 
 #----------NAT Gateway----------
+# Private subnet outbound internet: EIP -> NAT -> IGW -> internet
+# IGW must exist first — no direct reference so depends_on required
 # Sits in PUBLIC subnet
 # Allows private subnet resources to reach internet (outbound only)
 # App server uses this to pull Docker images from Docker Hub
 # depends_on = IGW must exist before NAT Gateway
-#-----EIP → NAT Gateway → IGW → internet-----
+#EIP → NAT Gateway → IGW → internet
 resource "aws_nat_gateway" "nat" {
 
     tags = {
