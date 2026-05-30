@@ -4,6 +4,7 @@ resource "aws_vpc" "vpc" {
 
     tags = {
         Name = "${var.project_name}-vpc"
+        Environment = var.environment
     }
 
     cidr_block = var.aws_vpc_cidr_block
@@ -36,6 +37,7 @@ resource "aws_internet_gateway" "igw" {
 
     tags = {
         Name = "${var.project_name}-igw"
+        Environment = var.environment
     }
 
     vpc_id = aws_vpc.vpc.id
@@ -44,18 +46,23 @@ resource "aws_internet_gateway" "igw" {
 
 #----------Public Subnet----------
 # NAT Gateway lives here - no bastion, access via SSM only
-resource "aws_subnet" "public_subnet_one" {
+resource "aws_subnet" "public_subnets" {
 
     vpc_id = aws_vpc.vpc.id
 
     tags = {
-        Name = "${var.project_name}-public-subnet-1"
+        Name = "${var.project_name}-public-subnet-${count.index +1}"
+        Environment = var.environment
+
+        Tier = "public"
     }
 
     availability_zone = var.azs[count.index]
 
-    cidr_block = var.public_subnet_one_cidr
+    cidr_block = var.public_subnet_cidrs[count.index]
+    count = length(var.public_subnet_cidrs)
     
+    # EC2 gets public IP -> internet can reach it
     map_public_ip_on_launch = true 
 
 }
@@ -63,36 +70,46 @@ resource "aws_subnet" "public_subnet_one" {
 #----------Private Subnet----------
 # App server lives here - outbound via NAT only, not reachable from internet
 # More secure - not reachable from internet directly
-resource "aws_subnet" "private_subnet_one" {
+resource "aws_subnet" "private_subnets" {
 
     vpc_id = aws_vpc.vpc.id
 
     tags = {
-        Name = "${var.project_name}-private-subnet-1"
+        Name = "${var.project_name}-private-subnet-${count.index +1}"
+        Environment = var.environment
+
+        Tier = "private"
     }
 
     availability_zone = var.azs[count.index]
 
-    cidr_block = var.private_subnet_one_cidr
+    cidr_block = var.private_subnet_cidrs[count.index]
+    count = length(var.private_subnet_cidrs)
 
     map_public_ip_on_launch = false
 
   
 }
 
-#----------Elastic IP----------
+#----------Elastic IP for NAT----------
+# If single_nat_gateway = true  -> creates 1 EIP only
+# If single_nat_gateway = false -> creates 1 EIP per AZ
 # Fixed public IP for NAT Gateway
 # Create Elastic IP first(NAT Gateway needs it)
 # Elastic IP for NAT Gateway
 # NAT Gateway needs a fixed public IP to work
-resource "aws_eip" "eip_nat" {
+resource "aws_eip" "nat_eips" {
 
     # Means: "This Elastic IP is for VPC use"
+    # Used INSIDE a VPC
     domain = "vpc"
 
     tags = {
-        Name = "${var.project_name}-eip-for-nat"
+        Name = "${var.project_name}-eip-nat-${count.index +1}"
+        Environment = var.environment
     }
+
+    count = var.single_nat_gateway ? 1 : length(var.azs)
 
 }
 
@@ -104,22 +121,30 @@ resource "aws_eip" "eip_nat" {
 # App server uses this to pull Docker images from Docker Hub
 # depends_on = IGW must exist before NAT Gateway
 #EIP → NAT Gateway → IGW → internet
-resource "aws_nat_gateway" "nat" {
+resource "aws_nat_gateway" "nat_gateways" {
 
     tags = {
-        Name = "${var.project_name}-nat-gateway"
+        Name = "${var.project_name}-nat-gateway-${count.index +1}"
+        Environment = var.environment
     }
 
-    subnet_id = aws_subnet.public_subnet_one.id
+    subnet_id = aws_subnet.private_subnets[count.index].id
 
+    # This NAT Gateway faces the public internet
     connectivity_type = "public" 
 
-    allocation_id = aws_eip.eip_nat.id
+    allocation_id = aws_eip.nat_eips[count.index].id
 
     # depends_on = IGW must exist before NAT Gateway can route traffic to internet
     # IGW has no direct reference in this resource so must declare manually
+    # explicit dependency
+    # NAT Gateway ALWAYS needs IGW to exist first
     #-----IGW must exist before NAT can route-----
     depends_on = [ aws_internet_gateway.igw ]
+
+    # true -> count = 1 -> 1 NAT Gateway created
+    # false -> count = length(var.azs) -> 3 NAT Gateways created
+    count = var.single_nat_gateway ? 1 : length(var.azs)
   
 }
 
@@ -127,18 +152,18 @@ resource "aws_nat_gateway" "nat" {
 #----------Public Route Table----------
 # PUBLIC Route Table
 #   → Used by PUBLIC subnets
-#  → Rule: "all internet traffic → go through Internet Gateway"
+#   → Rule: "all internet traffic → go through Internet Gateway"
 #   → ONE route table shared by all public subnets
 # Route Table = A set of rules that tells network traffic WHERE to go
 # Route Table  =  Road signs in a city
-# Routes       =  Individual signs ("To Airport → Turn Left")
+# Routes       =  Individual signs ("To Airport -> Turn Left")
 
 # Without road signs → cars get lost, traffic goes nowhere
 # With road signs    → traffic knows exactly where to go
 
 # All public subnets use the SAME Internet Gateway
-# → Only ONE IGW exists per VPC
-# → So ONE route table is enough for all public subnets
+# -> Only ONE IGW exists per VPC
+# -> So ONE route table is enough for all public subnets
 
 #    public-subnet-1 ──┐
 #    public-subnet-2 ──┼──→ same route table → Internet Gateway
@@ -146,17 +171,23 @@ resource "aws_nat_gateway" "nat" {
 
 # Routes all internet traffic through IGW
 # Used by public subnet (bastion + NAT Gateway)
-resource "aws_route_table" "public" {
+#---Route Table = A set of rules that tells network traffic WHERE to go---
+resource "aws_route_table" "public_rt" {
   
     tags = {
-        Name = "${var.project_name}-public-rt"
+        Name = "${var.project_name}-public-rt-${count.index +1}"
+        Environment = var.environment
     }
 
     vpc_id = aws_vpc.vpc.id
 
+    # All traffic -> Internet Gateway -> Internet directly
     route {
+
+        #"ALL traffic" or "every IP address on the internet"
         cidr_block = "0.0.0.0/0"
         gateway_id = aws_internet_gateway.igw.id
+
     }
 
 }
@@ -165,9 +196,11 @@ resource "aws_route_table" "public" {
 # Connects public route table to public subnet
 resource "aws_route_table_association" "public" {
 
-    route_table_id = aws_route_table.public.id
+    route_table_id = aws_route_table.public_rt.id
 
-    subnet_id = aws_subnet.public_subnet_one.id 
+    subnet_id = aws_subnet.public_subnets[count.index].id
+
+    count = length(var.azs)
   
 }
 
@@ -189,17 +222,21 @@ resource "aws_route_table_association" "public" {
 # Used by private subnet (app server)
 # Outbound only — nobody from internet can reach private subnet
 
-resource "aws_route_table" "private" {
+# If single_nat_gateway = true -> all private subnets route through 1 NAT Gateway
+# If single_nat_gateway = false -> each private subnet routes through its own NAT Gateway
+resource "aws_route_table" "private_rt" {
 
     tags = {
         Name = "${var.project_name}-private-rt"
+        Environment = var.environment
     }
 
     vpc_id = aws_vpc.vpc.id
 
+    # "All traffic -> NAT Gateway -> Internet indirectly"
     route {
         cidr_block = "0.0.0.0/0"
-        nat_gateway_id = aws_nat_gateway.nat.id
+        nat_gateway_id = aws_nat_gateway.single_nat_gateway ? aws_nat_gateway.nat_gateways[0].id : aws_nat_gateway.nat_gateways[count.index].id
     }
   
 }
@@ -211,7 +248,9 @@ resource "aws_route_table_association" "private" {
 
     route_table_id = aws_route_table.private.id
 
-    subnet_id = aws_subnet.private_subnet_one.id 
+    subnet_id = aws_subnet.private_subnets[count.index].id 
+
+    count = length(var.azs) 
 
 }
 
